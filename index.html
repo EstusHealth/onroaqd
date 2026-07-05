@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>OT On-Road Assessment Capture</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1f2630;
+    --text:#f0f6fc; --dim:#9aa7b4;
+    --blue:#1f6feb; --green:#1a7f37; --amber:#b58a00; --red:#c93c37; --purple:#7c4dcc;
+    --border:#30363d;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    height:100%; overscroll-behavior:none;}
+  #app{display:flex; flex-direction:column; height:100vh; height:100dvh;}
+
+  /* ---------- header ---------- */
+  header{display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; background:var(--panel); border-bottom:2px solid var(--border); flex-shrink:0;}
+  header .title{font-size:1.05rem; font-weight:700;}
+  header .meta{font-size:.85rem; color:var(--dim);}
+  #clock{font-variant-numeric:tabular-nums; font-size:1.3rem; font-weight:700;}
+  #eventCount{background:var(--blue); border-radius:999px; padding:2px 12px; font-weight:700; font-size:1rem;}
+
+  main{flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column;}
+
+  /* ---------- generic big buttons ---------- */
+  .grid{display:grid; gap:12px;}
+  .grid.cols3{grid-template-columns:repeat(3,1fr);}
+  .grid.cols2{grid-template-columns:repeat(2,1fr);}
+  .grid.cols4{grid-template-columns:repeat(4,1fr);}
+  @media (max-width:640px){ .grid.cols3,.grid.cols4{grid-template-columns:repeat(2,1fr);} }
+
+  button{font-family:inherit; border:none; cursor:pointer;}
+  .big{min-height:86px; border-radius:16px; font-size:1.35rem; font-weight:800; color:#fff;
+    background:var(--panel2); border:2px solid var(--border);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+    line-height:1.15; padding:10px; text-align:center;}
+  .big:active{transform:scale(.96); filter:brightness(1.35);}
+  .big .icon{font-size:1.9rem; line-height:1;}
+  .big.blue{background:var(--blue); border-color:#3b82f6;}
+  .big.selected{background:var(--blue); border-color:#79b8ff; box-shadow:0 0 0 4px rgba(56,139,253,.45);}
+  .big.err.selected{background:var(--amber); border-color:#ffd33d; box-shadow:0 0 0 4px rgba(255,211,61,.4); color:#000;}
+  .big.crit{border-color:#8b3a37;}
+  .big.crit.selected{background:var(--red); border-color:#ff7b72; box-shadow:0 0 0 4px rgba(255,123,114,.45); color:#fff;}
+
+  .stepTitle{font-size:1.15rem; font-weight:700; color:var(--dim); margin:2px 0 12px;
+    display:flex; align-items:center; justify-content:space-between;}
+  .crumb{color:var(--text); font-size:1.05rem;}
+  .crumb b{color:#79b8ff;}
+
+  .savebar{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:14px;}
+  .save{min-height:96px; border-radius:16px; font-size:1.25rem; font-weight:800; color:#fff; border:2px solid transparent;}
+  .save small{display:block; font-weight:600; font-size:.85rem; opacity:.85; margin-top:3px;}
+  .save.green{background:var(--green);} .save.amber{background:var(--amber);} .save.red{background:var(--red);}
+  .save:active{transform:scale(.96); filter:brightness(1.25);}
+
+  .cancel{margin-top:12px; min-height:56px; width:100%; border-radius:14px; font-size:1.1rem; font-weight:700;
+    background:transparent; color:var(--dim); border:2px solid var(--border);}
+  .cancel:active{background:var(--panel2);}
+
+  textarea{width:100%; background:var(--panel2); border:2px solid var(--border); border-radius:12px;
+    color:var(--text); font-size:1.1rem; padding:10px; min-height:56px; resize:none; user-select:text;}
+
+  /* ---------- log ---------- */
+  .logItem{background:var(--panel); border:1px solid var(--border); border-radius:12px;
+    padding:10px 12px; margin-bottom:8px; display:flex; align-items:center; gap:10px;}
+  .logItem .t{font-variant-numeric:tabular-nums; color:var(--dim); font-size:.95rem; min-width:70px;}
+  .logItem .d{flex:1; font-size:1.02rem;}
+  .logItem .d small{color:var(--dim); display:block;}
+  .sev{padding:3px 10px; border-radius:999px; font-size:.8rem; font-weight:800;}
+  .sev.I{background:var(--green);} .sev.P{background:var(--amber); color:#000;} .sev.C{background:var(--red);}
+  .del{background:transparent; color:var(--dim); font-size:1.5rem; padding:6px 10px; border-radius:10px;}
+  .del:active{background:var(--red); color:#fff;}
+
+  /* ---------- footer nav ---------- */
+  nav{display:grid; grid-template-columns:repeat(3,1fr); background:var(--panel);
+    border-top:2px solid var(--border); flex-shrink:0;}
+  nav button{background:transparent; color:var(--dim); font-size:1.05rem; font-weight:700;
+    padding:16px 4px; border-top:4px solid transparent;}
+  nav button.active{color:var(--text); border-top-color:var(--blue);}
+
+  /* ---------- setup / export ---------- */
+  .field{margin-bottom:14px;}
+  .field label{display:block; font-size:.95rem; color:var(--dim); font-weight:700; margin-bottom:6px;}
+  .field input{width:100%; background:var(--panel2); border:2px solid var(--border); border-radius:12px;
+    color:var(--text); font-size:1.2rem; padding:14px; user-select:text;}
+  .action{width:100%; min-height:74px; border-radius:16px; font-size:1.25rem; font-weight:800;
+    color:#fff; margin-bottom:12px; border:2px solid transparent;}
+  .action.blue{background:var(--blue);} .action.green{background:var(--green);}
+  .action.purple{background:var(--purple);} .action.grey{background:var(--panel2); border-color:var(--border);}
+  .action.redOutline{background:transparent; border-color:var(--red); color:#ff7b72;}
+  .action:active{transform:scale(.97); filter:brightness(1.25);}
+
+  .summary{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:14px; font-size:1rem; line-height:1.6;}
+  .toast{position:fixed; bottom:110px; left:50%; transform:translateX(-50%);
+    background:var(--green); color:#fff; font-weight:800; font-size:1.15rem;
+    padding:14px 26px; border-radius:999px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:50; white-space:nowrap;}
+  .toast.show{opacity:1;}
+  .toast.red{background:var(--red);}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <div class="title">🚗 On-Road Capture</div>
+      <div class="meta" id="clientMeta">No session</div>
+    </div>
+    <div style="text-align:right">
+      <div id="clock">--:--:--</div>
+      <span id="eventCount">0</span>
+    </div>
+  </header>
+
+  <main id="main"></main>
+
+  <nav>
+    <button id="navCapture" onclick="go('capture')">＋ Capture</button>
+    <button id="navLog" onclick="go('log')">☰ Log</button>
+    <button id="navExport" onclick="go('export')">⇪ Export</button>
+  </nav>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= configuration ================= */
+const SITUATIONS = [
+  ['Turn','↰'],['Intersection','✚'],['Roundabout','↻'],
+  ['Traffic Lights','🚦'],['Lane Change','⇄'],['Merge','⤳'],
+  ['Parking','🅿'],['Reversing','◀'],['U-Turn','↩'],
+  ['Pedestrian / Crossing','🚶'],['Give Way / Stop','⛔'],['Open Road / General','—'],
+];
+const DIRECTIONS = [['Left','⬅'],['Right','➡'],['Straight','⬆'],['N/A','·']];
+const ERRORS = [
+  'Hesitation','Too Slow','Speeding','Wide Turn','Cut Corner',
+  'Missed Head Check','Missed Mirror','Signal Error','Lane Position',
+  'Late Braking','Hard Braking','Failed to Give Way','Poor Gap Selection','Stalled / Rolled'
+];
+const CRITICAL_ERRORS = ['Near Miss','Examiner Intervention','Disobeyed Sign/Signal','Collision'];
+
+/* ================= state ================= */
+const LS_KEY = 'ot_onroad_v1';
+let S = load() || { session:null, events:[] };
+let view = 'capture';
+let draft = null;   // {ts, situation, direction, errors:[], note}
+let step = S.session ? 'situation' : 'setup';
+
+function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){ return null; } }
+function persist(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(S)); }catch(e){} }
+
+/* ================= helpers ================= */
+const $ = id => document.getElementById(id);
+const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function fmtTime(iso){ return new Date(iso).toLocaleTimeString('en-GB',{hour12:false}); }
+function elapsed(iso){
+  if(!S.session) return '';
+  const s = Math.max(0, Math.round((new Date(iso)-new Date(S.session.startedAt))/1000));
+  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+function toast(msg, red){
+  const t=$('toast'); t.textContent=msg; t.className='toast show'+(red?' red':'');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1400);
+}
+setInterval(()=>{ const c=$('clock'); if(c) c.textContent=new Date().toLocaleTimeString('en-GB',{hour12:false}); },1000);
+
+/* keep screen awake if supported */
+let wakeLock=null;
+async function requestWake(){ try{ wakeLock = await navigator.wakeLock?.request('screen'); }catch(e){} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') requestWake(); });
+requestWake();
+
+/* ================= navigation ================= */
+function go(v){
+  view=v;
+  if(v==='capture' && !draft) step = S.session ? 'situation':'setup';
+  render();
+}
+function updateHeader(){
+  $('eventCount').textContent = S.events.length;
+  $('clientMeta').textContent = S.session
+    ? `${S.session.client||'Client'} · started ${fmtTime(S.session.startedAt)}`
+    : 'No session — set up to begin';
+}
+
+/* ================= render ================= */
+function render(){
+  updateHeader();
+  ['Capture','Log','Export'].forEach(n=>$('nav'+n).classList.toggle('active', view===n.toLowerCase()));
+  const m=$('main');
+  if(view==='capture') m.innerHTML = renderCapture();
+  else if(view==='log') m.innerHTML = renderLog();
+  else m.innerHTML = renderExport();
+  m.scrollTop=0;
+}
+
+/* ---------- capture flow ---------- */
+function renderCapture(){
+  if(step==='setup') return renderSetup();
+  if(step==='situation'){
+    return `<div class="stepTitle"><span>1 · Tap situation as it begins</span></div>
+      <div class="grid cols3">
+      ${SITUATIONS.map(([n,i])=>`<button class="big" onclick="pickSituation('${esc(n)}')"><span class="icon">${i}</span>${esc(n)}</button>`).join('')}
+      </div>`;
+  }
+  if(step==='direction'){
+    return `<div class="stepTitle"><span>2 · Direction</span><span class="crumb"><b>${esc(draft.situation)}</b> @ ${fmtTime(draft.ts)}</span></div>
+      <div class="grid cols2">
+      ${DIRECTIONS.map(([n,i])=>`<button class="big" style="min-height:130px" onclick="pickDirection('${esc(n)}')"><span class="icon" style="font-size:2.6rem">${i}</span>${esc(n)}</button>`).join('')}
+      </div>
+      <button class="cancel" onclick="cancelDraft()">✕ Cancel</button>`;
+  }
+  /* errors + severity-save */
+  return `<div class="stepTitle"><span>3 · Errors (tap all that apply)</span>
+      <span class="crumb"><b>${esc(draft.situation)}</b> · ${esc(draft.direction)} @ ${fmtTime(draft.ts)}</span></div>
+    <div class="grid cols3">
+      ${ERRORS.map(e=>`<button class="big err ${draft.errors.includes(e)?'selected':''}" onclick="toggleError('${esc(e)}')">${esc(e)}</button>`).join('')}
+      ${CRITICAL_ERRORS.map(e=>`<button class="big err crit ${draft.errors.includes(e)?'selected':''}" onclick="toggleError('${esc(e)}')">⚠ ${esc(e)}</button>`).join('')}
+    </div>
+    <div style="margin-top:12px">
+      <textarea id="note" placeholder="Optional note…" oninput="draft.note=this.value">${esc(draft.note)}</textarea>
+    </div>
+    <div class="savebar">
+      <button class="save green" onclick="saveEvent('Independent')">✓ SAVE<small>Independent</small></button>
+      <button class="save amber" onclick="saveEvent('Prompted')">✓ SAVE<small>Prompted / Cued</small></button>
+      <button class="save red" onclick="saveEvent('Critical')">✓ SAVE<small>Critical</small></button>
+    </div>
+    <button class="cancel" onclick="cancelDraft()">✕ Cancel this event</button>`;
+}
+
+function renderSetup(){
+  return `<div class="stepTitle"><span>New assessment session</span></div>
+    <div class="field"><label>Client (initials or ID — avoid full names)</label><input id="inClient" autocomplete="off"></div>
+    <div class="field"><label>Assessor</label><input id="inAssessor" autocomplete="off" value="Liam"></div>
+    <div class="field"><label>Route / vehicle (optional)</label><input id="inRoute" autocomplete="off"></div>
+    <button class="action green" onclick="startSession()">▶ Start session</button>
+    ${S.events.length? `<button class="action grey" onclick="resumeOld()">Resume previous session (${S.events.length} events)</button>`:''}`;
+}
+
+function pickSituation(n){
+  draft = { ts:new Date().toISOString(), situation:n, direction:'', errors:[], note:'' };
+  step='direction'; render();
+}
+function pickDirection(n){ draft.direction=n; step='errors'; render(); }
+function toggleError(e){
+  const i=draft.errors.indexOf(e);
+  if(i>=0) draft.errors.splice(i,1); else draft.errors.push(e);
+  render();
+}
+function saveEvent(sev){
+  draft.note = ($('note')?.value||'').trim();
+  S.events.push({ ...draft, severity:sev, savedAt:new Date().toISOString() });
+  persist();
+  toast(`Saved · ${draft.situation} · ${sev}`, sev==='Critical');
+  draft=null; step='situation'; render();
+}
+function cancelDraft(){ draft=null; step='situation'; render(); }
+
+function startSession(){
+  S = { session:{
+      client:$('inClient').value.trim(), assessor:$('inAssessor').value.trim(),
+      route:$('inRoute').value.trim(), startedAt:new Date().toISOString()
+    }, events:[] };
+  persist(); step='situation'; render(); requestWake();
+}
+function resumeOld(){
+  if(!S.session) S.session={client:'',assessor:'',route:'',startedAt:S.events[0]?.ts||new Date().toISOString()};
+  step='situation'; render();
+}
+
+/* ---------- log ---------- */
+function renderLog(){
+  if(!S.events.length) return `<div class="stepTitle"><span>Event log</span></div><p style="color:var(--dim);font-size:1.1rem">No events recorded yet.</p>`;
+  const sevMap={Independent:'I',Prompted:'P',Critical:'C'};
+  return `<div class="stepTitle"><span>Event log · ${S.events.length} events</span></div>` +
+    S.events.map((e,i)=>`<div class="logItem">
+      <div class="t">${fmtTime(e.ts)}<br><span style="font-size:.8rem">+${elapsed(e.ts)}</span></div>
+      <div class="d"><b>${esc(e.situation)}</b> · ${esc(e.direction)}
+        <small>${e.errors.length? esc(e.errors.join(', ')) : 'No errors'}${e.note? ' — '+esc(e.note):''}</small></div>
+      <span class="sev ${sevMap[e.severity]}">${sevMap[e.severity]}</span>
+      <button class="del" onclick="delEvent(${i})">✕</button>
+    </div>`).reverse().join('');
+}
+function delEvent(i){
+  if(confirm('Delete this event?')){ S.events.splice(i,1); persist(); render(); }
+}
+
+/* ---------- export ---------- */
+function summarise(){
+  const n=S.events.length;
+  const bySev={Independent:0,Prompted:0,Critical:0};
+  const errCount={};
+  S.events.forEach(e=>{ bySev[e.severity]++; e.errors.forEach(x=>errCount[x]=(errCount[x]||0)+1); });
+  const topErr=Object.entries(errCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  return {n,bySev,errCount,topErr};
+}
+function renderExport(){
+  const s=summarise();
+  return `<div class="stepTitle"><span>Export · ${s.n} events</span></div>
+    <div class="summary">
+      <b>${esc(S.session?.client||'Client')}</b> · ${esc(S.session?.assessor||'')} · ${S.session? new Date(S.session.startedAt).toLocaleString():''}<br>
+      Independent: <b>${s.bySev.Independent}</b> · Prompted: <b>${s.bySev.Prompted}</b> · Critical: <b style="color:#ff7b72">${s.bySev.Critical}</b><br>
+      ${s.topErr.length? 'Top errors: '+s.topErr.map(([k,v])=>`${esc(k)} ×${v}`).join(', ') : 'No errors recorded.'}
+    </div>
+    <button class="action purple" onclick="copyAI()">🤖 Copy for AI (structured + prompt)</button>
+    <button class="action blue" onclick="downloadCSV()">⬇ Download CSV</button>
+    <button class="action blue" onclick="downloadJSON()">⬇ Download JSON</button>
+    <button class="action grey" onclick="copyText('csv')">Copy CSV to clipboard</button>
+    <button class="action redOutline" onclick="endSession()">⏹ End session &amp; clear data</button>`;
+}
+
+function csvString(){
+  const head=['#','clock_time','elapsed_mm:ss','situation','direction','errors','error_count','severity','note'];
+  const rows=S.events.map((e,i)=>[i+1,fmtTime(e.ts),elapsed(e.ts),e.situation,e.direction,e.errors.join('; '),e.errors.length,e.severity,e.note||'']);
+  return [head,...rows].map(r=>r.map(c=>{c=String(c); return /[",\n]/.test(c)? '"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\n');
+}
+function jsonPayload(){
+  return {
+    tool:'OT On-Road Assessment Capture', exported:new Date().toISOString(),
+    session:S.session, summary:summarise(),
+    events:S.events.map((e,i)=>({ n:i+1, timestamp:e.ts, clock:fmtTime(e.ts), elapsed:elapsed(e.ts),
+      situation:e.situation, direction:e.direction, errors:e.errors, severity:e.severity, note:e.note||null }))
+  };
+}
+function download(name, content, type){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+function stamp(){ return (S.session?.client||'session').replace(/\W+/g,'_')+'_'+new Date().toISOString().slice(0,10); }
+function downloadCSV(){ download('onroad_'+stamp()+'.csv', csvString(), 'text/csv'); toast('CSV downloaded'); }
+function downloadJSON(){ download('onroad_'+stamp()+'.json', JSON.stringify(jsonPayload(),null,2), 'application/json'); toast('JSON downloaded'); }
+
+async function copyText(kind){
+  const txt = kind==='csv'? csvString() : kind;
+  try{ await navigator.clipboard.writeText(txt); toast('Copied ✓'); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove(); toast('Copied ✓');
+  }
+}
+function copyAI(){
+  const p = jsonPayload();
+  const txt =
+`Below is structured data from an occupational therapy on-road driving assessment, captured live situation-by-situation. Severity per event: "Independent" (performed safely without input), "Prompted" (needed verbal cue/prompt), "Critical" (unsafe; assessor intervention or serious error). Timestamps are real clock time; "elapsed" is time since drive start.
+
+Please analyse: overall error patterns, which situation types and directions produced most difficulty, severity distribution over the course of the drive (e.g. fatigue effects), and any critical safety concerns. Then draft a concise clinical summary paragraph suitable for an OT driving assessment report.
+
+${JSON.stringify(p,null,2)}`;
+  copyText(txt);
+}
+
+function endSession(){
+  if(!confirm('End session and clear all data from this device?\n\nMake sure you have exported first.')) return;
+  if(!confirm('Really clear? This cannot be undone.')) return;
+  S={session:null,events:[]}; persist(); draft=null; step='setup'; go('capture');
+}
+
+render();
+</script>
+</body>
+</html>
