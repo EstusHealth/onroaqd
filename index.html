@@ -36,10 +36,11 @@
   @media (max-width:640px){ .grid.cols3,.grid.cols4{grid-template-columns:repeat(2,1fr);} }
 
   button{font-family:inherit; border:none; cursor:pointer;}
-  .big{min-height:86px; border-radius:16px; font-size:1.35rem; font-weight:800; color:#fff;
+  .big{position:relative; min-height:86px; border-radius:16px; font-size:1.35rem; font-weight:800; color:#fff;
     background:var(--panel2); border:2px solid var(--border);
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px;
     line-height:1.15; padding:10px; text-align:center;}
+  @media (max-width:640px){ .big{min-height:76px; font-size:1.1rem;} .big .icon{font-size:1.6rem;} }
   .big:active{transform:scale(.96); filter:brightness(1.35);}
   .big .icon{font-size:1.9rem; line-height:1;}
   .big.blue{background:var(--blue); border-color:#3b82f6;}
@@ -62,6 +63,31 @@
   .cancel{margin-top:12px; min-height:56px; width:100%; border-radius:14px; font-size:1.1rem; font-weight:700;
     background:transparent; color:var(--dim); border:2px solid var(--border);}
   .cancel:active{background:var(--panel2);}
+
+  /* ---------- outcome step ---------- */
+  .dirRow{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:2px 0 16px;}
+  .chip{min-height:64px; border-radius:14px; font-size:1.05rem; font-weight:700; color:var(--dim);
+    background:var(--panel2); border:2px solid var(--border);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;}
+  .chip .icon{font-size:1.5rem; line-height:1;}
+  .chip.selected{background:var(--blue); border-color:#79b8ff; color:#fff;}
+  .chip:active{transform:scale(.96);}
+  .nil{width:100%; min-height:34vh; border-radius:20px; background:var(--green); color:#fff;
+    font-size:1.9rem; font-weight:800; border:2px solid #2ea043; margin-bottom:14px;}
+  .nil small{display:block; font-size:1rem; font-weight:600; opacity:.85; margin-top:6px;}
+  .nil:active{transform:scale(.97); filter:brightness(1.2);}
+  .issue{width:100%; min-height:15vh; border-radius:20px; background:var(--amber); color:#000;
+    font-size:1.45rem; font-weight:800; border:2px solid #d4a72c;}
+  .issue:active{transform:scale(.97); filter:brightness(1.15);}
+  .tally{position:absolute; top:5px; right:7px; background:var(--blue); border-radius:999px;
+    min-width:22px; padding:1px 6px; font-size:.8rem; font-weight:800;}
+  .lastStrip{display:flex; align-items:center; gap:10px; background:var(--panel);
+    border:1px solid var(--border); border-radius:12px; padding:8px 12px; margin-bottom:12px;
+    font-size:.95rem; color:var(--dim);}
+  .lastStrip b{color:var(--text);}
+  .lastStrip .undo{background:transparent; border:2px solid var(--border); color:#79b8ff;
+    border-radius:10px; font-weight:800; font-size:.95rem; padding:10px 14px; flex-shrink:0;}
+  .lastStrip .undo:active{background:var(--panel2);}
 
   textarea{width:100%; background:var(--panel2); border:2px solid var(--border); border-radius:12px;
     color:var(--text); font-size:1.1rem; padding:10px; min-height:56px; resize:none; user-select:text;}
@@ -136,7 +162,7 @@ const SITUATIONS = [
   ['Parking','🅿'],['Reversing','◀'],['U-Turn','↩'],
   ['Pedestrian / Crossing','🚶'],['Give Way / Stop','⛔'],['Open Road / General','—'],
 ];
-const DIRECTIONS = [['Left','⬅'],['Right','➡'],['Straight','⬆'],['N/A','·']];
+const DIRECTIONS = [['Left','⬅'],['Straight','⬆'],['Right','➡']];
 const ERRORS = [
   'Hesitation','Too Slow','Speeding','Wide Turn','Cut Corner',
   'Missed Head Check','Missed Mirror','Signal Error','Lane Position',
@@ -168,6 +194,7 @@ function toast(msg, red){
   clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1400);
 }
 setInterval(()=>{ const c=$('clock'); if(c) c.textContent=new Date().toLocaleTimeString('en-GB',{hour12:false}); },1000);
+function buzz(ms){ try{ navigator.vibrate && navigator.vibrate(ms||12); }catch(e){} }
 
 /* keep screen awake if supported */
 let wakeLock=null;
@@ -203,21 +230,25 @@ function render(){
 function renderCapture(){
   if(step==='setup') return renderSetup();
   if(step==='situation'){
-    return `<div class="stepTitle"><span>1 · Tap situation as it begins</span></div>
+    const counts={}; S.events.forEach(e=>counts[e.situation]=(counts[e.situation]||0)+1);
+    return `${lastStrip()}<div class="stepTitle"><span>Tap situation as it happens</span></div>
       <div class="grid cols3">
-      ${SITUATIONS.map(([n,i])=>`<button class="big" onclick="pickSituation('${esc(n)}')"><span class="icon">${i}</span>${esc(n)}</button>`).join('')}
+      ${SITUATIONS.map(([n,i])=>`<button class="big" onclick="pickSituation('${esc(n)}')">${counts[n]?`<span class="tally">${counts[n]}</span>`:''}<span class="icon">${i}</span>${esc(n)}</button>`).join('')}
       </div>`;
   }
-  if(step==='direction'){
-    return `<div class="stepTitle"><span>2 · Direction</span><span class="crumb"><b>${esc(draft.situation)}</b> @ ${fmtTime(draft.ts)}</span></div>
-      <div class="grid cols2">
-      ${DIRECTIONS.map(([n,i])=>`<button class="big" style="min-height:130px" onclick="pickDirection('${esc(n)}')"><span class="icon" style="font-size:2.6rem">${i}</span>${esc(n)}</button>`).join('')}
+  if(step==='outcome'){
+    return `<div class="stepTitle"><span>How did it go?</span>
+        <span class="crumb"><b>${esc(draft.situation)}</b> @ ${fmtTime(draft.ts)}</span></div>
+      <div class="dirRow">
+      ${DIRECTIONS.map(([n,i])=>`<button class="chip ${draft.direction===n?'selected':''}" onclick="pickDirection('${esc(n)}')"><span class="icon">${i}</span>${esc(n)}</button>`).join('')}
       </div>
+      <button class="nil" onclick="saveNil()">✓ NIL ISSUES<small>saves instantly</small></button>
+      <button class="issue" onclick="toDetail()">⚠ ISSUE / ERROR…</button>
       <button class="cancel" onclick="cancelDraft()">✕ Cancel</button>`;
   }
-  /* errors + severity-save */
-  return `<div class="stepTitle"><span>3 · Errors (tap all that apply)</span>
-      <span class="crumb"><b>${esc(draft.situation)}</b> · ${esc(draft.direction)} @ ${fmtTime(draft.ts)}</span></div>
+  /* detail: errors + severity-save */
+  return `<div class="stepTitle"><span>What happened? (tap all that apply)</span>
+      <span class="crumb"><b>${esc(draft.situation)}</b>${draft.direction!=='N/A'?' · '+esc(draft.direction):''} @ ${fmtTime(draft.ts)}</span></div>
     <div class="grid cols3">
       ${ERRORS.map(e=>`<button class="big err ${draft.errors.includes(e)?'selected':''}" onclick="toggleError('${esc(e)}')">${esc(e)}</button>`).join('')}
       ${CRITICAL_ERRORS.map(e=>`<button class="big err crit ${draft.errors.includes(e)?'selected':''}" onclick="toggleError('${esc(e)}')">⚠ ${esc(e)}</button>`).join('')}
@@ -226,11 +257,22 @@ function renderCapture(){
       <textarea id="note" placeholder="Optional note…" oninput="draft.note=this.value">${esc(draft.note)}</textarea>
     </div>
     <div class="savebar">
-      <button class="save green" onclick="saveEvent('Independent')">✓ SAVE<small>Independent</small></button>
+      <button class="save green" onclick="saveEvent('Independent')">✓ SAVE<small>Self-corrected</small></button>
       <button class="save amber" onclick="saveEvent('Prompted')">✓ SAVE<small>Prompted / Cued</small></button>
       <button class="save red" onclick="saveEvent('Critical')">✓ SAVE<small>Critical</small></button>
     </div>
-    <button class="cancel" onclick="cancelDraft()">✕ Cancel this event</button>`;
+    <button class="cancel" onclick="backToOutcome()">‹ Back</button>`;
+}
+
+function lastStrip(){
+  const e=S.events[S.events.length-1];
+  if(!e) return '';
+  return `<div class="lastStrip"><span style="flex:1">Last: <b>${esc(e.situation)}</b> · ${e.errors.length? esc(e.errors.join(', ')) : 'Nil issues'} · ${fmtTime(e.ts)}</span><button class="undo" onclick="undoLast()">↺ UNDO</button></div>`;
+}
+function undoLast(){
+  if(!S.events.length) return;
+  buzz(); S.events.pop(); persist();
+  toast('Last event removed', true); render();
 }
 
 function renderSetup(){
@@ -243,20 +285,36 @@ function renderSetup(){
 }
 
 function pickSituation(n){
-  draft = { ts:new Date().toISOString(), situation:n, direction:'', errors:[], note:'' };
-  step='direction'; render();
+  buzz();
+  draft = { ts:new Date().toISOString(), situation:n, direction:'N/A', errors:[], note:'' };
+  step='outcome'; render();
 }
-function pickDirection(n){ draft.direction=n; step='errors'; render(); }
+function pickDirection(n){
+  buzz();
+  draft.direction = draft.direction===n ? 'N/A' : n;   // tap again to deselect
+  render();
+}
+function toDetail(){ buzz(); step='detail'; render(); }
+function backToOutcome(){ step='outcome'; render(); }
 function toggleError(e){
+  buzz();
   const i=draft.errors.indexOf(e);
   if(i>=0) draft.errors.splice(i,1); else draft.errors.push(e);
   render();
 }
+function saveNil(){
+  buzz(25);
+  commitDraft('Independent', `✓ ${draft.situation} · Nil issues`);
+}
 function saveEvent(sev){
+  buzz(25);
   draft.note = ($('note')?.value||'').trim();
+  commitDraft(sev, `Saved · ${draft.situation} · ${sev}`);
+}
+function commitDraft(sev, msg){
   S.events.push({ ...draft, severity:sev, savedAt:new Date().toISOString() });
   persist();
-  toast(`Saved · ${draft.situation} · ${sev}`, sev==='Critical');
+  toast(msg, sev==='Critical');
   draft=null; step='situation'; render();
 }
 function cancelDraft(){ draft=null; step='situation'; render(); }
@@ -280,8 +338,8 @@ function renderLog(){
   return `<div class="stepTitle"><span>Event log · ${S.events.length} events</span></div>` +
     S.events.map((e,i)=>`<div class="logItem">
       <div class="t">${fmtTime(e.ts)}<br><span style="font-size:.8rem">+${elapsed(e.ts)}</span></div>
-      <div class="d"><b>${esc(e.situation)}</b> · ${esc(e.direction)}
-        <small>${e.errors.length? esc(e.errors.join(', ')) : 'No errors'}${e.note? ' — '+esc(e.note):''}</small></div>
+      <div class="d"><b>${esc(e.situation)}</b>${e.direction && e.direction!=='N/A' ? ' · '+esc(e.direction) : ''}
+        <small>${e.errors.length? esc(e.errors.join(', ')) : 'Nil issues'}${e.note? ' — '+esc(e.note):''}</small></div>
       <span class="sev ${sevMap[e.severity]}">${sevMap[e.severity]}</span>
       <button class="del" onclick="delEvent(${i})">✕</button>
     </div>`).reverse().join('');
