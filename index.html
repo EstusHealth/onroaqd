@@ -55,6 +55,7 @@
   .crumb b{color:#79b8ff;}
 
   .savebar{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:14px;}
+  .savebar.two{grid-template-columns:repeat(2,1fr);}
   .save{min-height:96px; border-radius:16px; font-size:1.25rem; font-weight:800; color:#fff; border:2px solid transparent;}
   .save small{display:block; font-weight:600; font-size:.85rem; opacity:.85; margin-top:3px;}
   .save.green{background:var(--green);} .save.amber{background:var(--amber);} .save.red{background:var(--red);}
@@ -157,24 +158,18 @@
 <script>
 /* ================= configuration ================= */
 const SITUATIONS = [
-  ['Turn','↰'],['Intersection','✚'],['Roundabout','↻'],
-  ['Traffic Lights','🚦'],['Lane Change','⇄'],['Merge','⤳'],
-  ['Parking','🅿'],['Reversing','◀'],['U-Turn','↩'],
-  ['Pedestrian / Crossing','🚶'],['Give Way / Stop','⛔'],['Open Road / General','—'],
+  ['Junction','✚'],['Traffic Lights','🚦'],['Roundabout','↻'],
+  ['Lane Change / Merge','⇄'],['Manoeuvre','🅿'],['Pedestrian / Hazard','🚶'],
 ];
 const DIRECTIONS = [['Left','⬅'],['Straight','⬆'],['Right','➡']];
-const ERRORS = [
-  'Hesitation','Too Slow','Speeding','Wide Turn','Cut Corner',
-  'Missed Head Check','Missed Mirror','Signal Error','Lane Position',
-  'Late Braking','Hard Braking','Failed to Give Way','Poor Gap Selection','Stalled / Rolled'
-];
-const CRITICAL_ERRORS = ['Near Miss','Examiner Intervention','Disobeyed Sign/Signal','Collision'];
+const BUCKETS = ['Observation','Planning','Positioning','Speed','Physical'];
+const CAUSES = ['Habit','Medical'];
 
 /* ================= state ================= */
-const LS_KEY = 'ot_onroad_v1';
+const LS_KEY = 'ot_onroad_v2';
 let S = load() || { session:null, events:[] };
 let view = 'capture';
-let draft = null;   // {ts, situation, direction, errors:[], note}
+let draft = null;   // {time, situation, direction, outcome, bucket, cause, note}
 let step = S.session ? 'situation' : 'setup';
 
 function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){ return null; } }
@@ -238,28 +233,26 @@ function renderCapture(){
   }
   if(step==='outcome'){
     return `<div class="stepTitle"><span>How did it go?</span>
-        <span class="crumb"><b>${esc(draft.situation)}</b> @ ${fmtTime(draft.ts)}</span></div>
+        <span class="crumb"><b>${esc(draft.situation)}</b> @ ${fmtTime(draft.time)}</span></div>
       <div class="dirRow">
       ${DIRECTIONS.map(([n,i])=>`<button class="chip ${draft.direction===n?'selected':''}" onclick="pickDirection('${esc(n)}')"><span class="icon">${i}</span>${esc(n)}</button>`).join('')}
       </div>
       <button class="nil" onclick="saveNil()">✓ NIL ISSUES<small>saves instantly</small></button>
-      <button class="issue" onclick="toDetail()">⚠ ISSUE / ERROR…</button>
+      <button class="issue" onclick="toDetail()">⚠ ISSUE…</button>
       <button class="cancel" onclick="cancelDraft()">✕ Cancel</button>`;
   }
-  /* detail: errors + severity-save */
-  return `<div class="stepTitle"><span>What happened? (tap all that apply)</span>
-      <span class="crumb"><b>${esc(draft.situation)}</b>${draft.direction!=='N/A'?' · '+esc(draft.direction):''} @ ${fmtTime(draft.ts)}</span></div>
+  /* detail: bucket (single-select) + note + cause-save */
+  return `<div class="stepTitle"><span>Which skill? then tap cause to save</span>
+      <span class="crumb"><b>${esc(draft.situation)}</b>${draft.direction?' · '+esc(draft.direction):''} @ ${fmtTime(draft.time)}</span></div>
     <div class="grid cols3">
-      ${ERRORS.map(e=>`<button class="big err ${draft.errors.includes(e)?'selected':''}" onclick="toggleError('${esc(e)}')">${esc(e)}</button>`).join('')}
-      ${CRITICAL_ERRORS.map(e=>`<button class="big err crit ${draft.errors.includes(e)?'selected':''}" onclick="toggleError('${esc(e)}')">⚠ ${esc(e)}</button>`).join('')}
+      ${BUCKETS.map(b=>`<button class="big ${draft.bucket===b?'selected':''}" onclick="pickBucket('${esc(b)}')">${esc(b)}</button>`).join('')}
     </div>
     <div style="margin-top:12px">
       <textarea id="note" placeholder="Optional note…" oninput="draft.note=this.value">${esc(draft.note)}</textarea>
     </div>
-    <div class="savebar">
-      <button class="save green" onclick="saveEvent('Independent')">✓ SAVE<small>Self-corrected</small></button>
-      <button class="save amber" onclick="saveEvent('Prompted')">✓ SAVE<small>Prompted / Cued</small></button>
-      <button class="save red" onclick="saveEvent('Critical')">✓ SAVE<small>Critical</small></button>
+    <div class="savebar two">
+      <button class="save green" onclick="saveIssue('Habit')">✓ SAVE<small>Habit</small></button>
+      <button class="save amber" onclick="saveIssue('Medical')">✓ SAVE<small>Medical</small></button>
     </div>
     <button class="cancel" onclick="backToOutcome()">‹ Back</button>`;
 }
@@ -267,7 +260,7 @@ function renderCapture(){
 function lastStrip(){
   const e=S.events[S.events.length-1];
   if(!e) return '';
-  return `<div class="lastStrip"><span style="flex:1">Last: <b>${esc(e.situation)}</b> · ${e.errors.length? esc(e.errors.join(', ')) : 'Nil issues'} · ${fmtTime(e.ts)}</span><button class="undo" onclick="undoLast()">↺ UNDO</button></div>`;
+  return `<div class="lastStrip"><span style="flex:1">Last: <b>${esc(e.situation)}</b> · ${e.outcome==='issue'? esc(e.bucket) : 'Nil issues'} · ${fmtTime(e.time)}</span><button class="undo" onclick="undoLast()">↺ UNDO</button></div>`;
 }
 function undoLast(){
   if(!S.events.length) return;
@@ -286,35 +279,37 @@ function renderSetup(){
 
 function pickSituation(n){
   buzz();
-  draft = { ts:new Date().toISOString(), situation:n, direction:'N/A', errors:[], note:'' };
+  draft = { time:new Date().toISOString(), situation:n, direction:null, outcome:null, bucket:null, cause:null, note:null };
   step='outcome'; render();
 }
 function pickDirection(n){
   buzz();
-  draft.direction = draft.direction===n ? 'N/A' : n;   // tap again to deselect
+  draft.direction = draft.direction===n ? null : n;   // tap again to deselect
   render();
 }
 function toDetail(){ buzz(); step='detail'; render(); }
 function backToOutcome(){ step='outcome'; render(); }
-function toggleError(e){
+function pickBucket(b){
   buzz();
-  const i=draft.errors.indexOf(e);
-  if(i>=0) draft.errors.splice(i,1); else draft.errors.push(e);
+  draft.bucket = draft.bucket===b ? null : b;   // single-select, tap again to clear
   render();
 }
 function saveNil(){
   buzz(25);
-  commitDraft('Independent', `✓ ${draft.situation} · Nil issues`);
+  draft.outcome='nil'; draft.bucket=null; draft.cause=null; draft.note=null;
+  commitDraft(`✓ ${draft.situation} · Nil issues`);
 }
-function saveEvent(sev){
+function saveIssue(cause){
+  if(!draft.bucket){ buzz(); toast('Pick a skill first', true); return; }
   buzz(25);
-  draft.note = ($('note')?.value||'').trim();
-  commitDraft(sev, `Saved · ${draft.situation} · ${sev}`);
+  const n = ($('note')?.value||'').trim();
+  draft.outcome='issue'; draft.cause=cause; draft.note = n || null;
+  commitDraft(`Saved · ${draft.situation} · ${draft.bucket} · ${cause}`);
 }
-function commitDraft(sev, msg){
-  S.events.push({ ...draft, severity:sev, savedAt:new Date().toISOString() });
+function commitDraft(msg){
+  S.events.push({ ...draft });
   persist();
-  toast(msg, sev==='Critical');
+  toast(msg);
   draft=null; step='situation'; render();
 }
 function cancelDraft(){ draft=null; step='situation'; render(); }
@@ -327,22 +322,27 @@ function startSession(){
   persist(); step='situation'; render(); requestWake();
 }
 function resumeOld(){
-  if(!S.session) S.session={client:'',assessor:'',route:'',startedAt:S.events[0]?.ts||new Date().toISOString()};
+  if(!S.session) S.session={client:'',assessor:'',route:'',startedAt:S.events[0]?.time||new Date().toISOString()};
   step='situation'; render();
 }
 
 /* ---------- log ---------- */
 function renderLog(){
   if(!S.events.length) return `<div class="stepTitle"><span>Event log</span></div><p style="color:var(--dim);font-size:1.1rem">No events recorded yet.</p>`;
-  const sevMap={Independent:'I',Prompted:'P',Critical:'C'};
   return `<div class="stepTitle"><span>Event log · ${S.events.length} events</span></div>` +
-    S.events.map((e,i)=>`<div class="logItem">
-      <div class="t">${fmtTime(e.ts)}<br><span style="font-size:.8rem">+${elapsed(e.ts)}</span></div>
-      <div class="d"><b>${esc(e.situation)}</b>${e.direction && e.direction!=='N/A' ? ' · '+esc(e.direction) : ''}
-        <small>${e.errors.length? esc(e.errors.join(', ')) : 'Nil issues'}${e.note? ' — '+esc(e.note):''}</small></div>
-      <span class="sev ${sevMap[e.severity]}">${sevMap[e.severity]}</span>
+    S.events.map((e,i)=>{
+      const detail = e.outcome==='issue'
+        ? esc([e.bucket, e.cause].filter(Boolean).join(' · ')) + (e.note? ' — '+esc(e.note) : '')
+        : 'Nil issues';
+      const badge = e.outcome==='issue' ? 'sev P' : 'sev I';
+      const badgeTxt = e.outcome==='issue' ? '!' : '✓';
+      return `<div class="logItem">
+      <div class="t">${fmtTime(e.time)}<br><span style="font-size:.8rem">+${elapsed(e.time)}</span></div>
+      <div class="d"><b>${esc(e.situation)}</b>${e.direction ? ' · '+esc(e.direction) : ''}
+        <small>${detail}</small></div>
+      <span class="${badge}">${badgeTxt}</span>
       <button class="del" onclick="delEvent(${i})">✕</button>
-    </div>`).reverse().join('');
+    </div>`;}).reverse().join('');
 }
 function delEvent(i){
   if(confirm('Delete this event?')){ S.events.splice(i,1); persist(); render(); }
@@ -351,19 +351,27 @@ function delEvent(i){
 /* ---------- export ---------- */
 function summarise(){
   const n=S.events.length;
-  const bySev={Independent:0,Prompted:0,Critical:0};
-  const errCount={};
-  S.events.forEach(e=>{ bySev[e.severity]++; e.errors.forEach(x=>errCount[x]=(errCount[x]||0)+1); });
-  const topErr=Object.entries(errCount).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  return {n,bySev,errCount,topErr};
+  const byOutcome={nil:0,issue:0};
+  const byBucket={}; BUCKETS.forEach(b=>byBucket[b]=0);
+  const byCause={Habit:0,Medical:0};
+  S.events.forEach(e=>{
+    byOutcome[e.outcome]=(byOutcome[e.outcome]||0)+1;
+    if(e.outcome==='issue'){
+      if(e.bucket!=null) byBucket[e.bucket]=(byBucket[e.bucket]||0)+1;
+      if(e.cause!=null) byCause[e.cause]=(byCause[e.cause]||0)+1;
+    }
+  });
+  return {n,byOutcome,byBucket,byCause};
 }
 function renderExport(){
   const s=summarise();
+  const buckets=BUCKETS.filter(b=>s.byBucket[b]).map(b=>`${esc(b)} ×${s.byBucket[b]}`).join(', ');
   return `<div class="stepTitle"><span>Export · ${s.n} events</span></div>
     <div class="summary">
       <b>${esc(S.session?.client||'Client')}</b> · ${esc(S.session?.assessor||'')} · ${S.session? new Date(S.session.startedAt).toLocaleString():''}<br>
-      Independent: <b>${s.bySev.Independent}</b> · Prompted: <b>${s.bySev.Prompted}</b> · Critical: <b style="color:#ff7b72">${s.bySev.Critical}</b><br>
-      ${s.topErr.length? 'Top errors: '+s.topErr.map(([k,v])=>`${esc(k)} ×${v}`).join(', ') : 'No errors recorded.'}
+      Nil issues: <b>${s.byOutcome.nil}</b> · Issues: <b style="color:#ffd33d">${s.byOutcome.issue}</b>
+      &nbsp;(Habit ${s.byCause.Habit} · Medical ${s.byCause.Medical})<br>
+      ${buckets? 'By skill: '+buckets : 'No issues recorded.'}
     </div>
     <button class="action purple" onclick="copyAI()">🤖 Copy for AI (structured + prompt)</button>
     <button class="action blue" onclick="downloadCSV()">⬇ Download CSV</button>
@@ -373,16 +381,16 @@ function renderExport(){
 }
 
 function csvString(){
-  const head=['#','clock_time','elapsed_mm:ss','situation','direction','errors','error_count','severity','note'];
-  const rows=S.events.map((e,i)=>[i+1,fmtTime(e.ts),elapsed(e.ts),e.situation,e.direction,e.errors.join('; '),e.errors.length,e.severity,e.note||'']);
-  return [head,...rows].map(r=>r.map(c=>{c=String(c); return /[",\n]/.test(c)? '"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\n');
+  const head=['time','situation','direction','outcome','bucket','cause','note'];
+  const rows=S.events.map(e=>[e.time,e.situation,e.direction,e.outcome,e.bucket,e.cause,e.note]);
+  return [head,...rows].map(r=>r.map(c=>{c=(c==null?'':String(c)); return /[",\n]/.test(c)? '"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\n');
 }
 function jsonPayload(){
   return {
     tool:'OT On-Road Assessment Capture', exported:new Date().toISOString(),
     session:S.session, summary:summarise(),
-    events:S.events.map((e,i)=>({ n:i+1, timestamp:e.ts, clock:fmtTime(e.ts), elapsed:elapsed(e.ts),
-      situation:e.situation, direction:e.direction, errors:e.errors, severity:e.severity, note:e.note||null }))
+    events:S.events.map(e=>({ time:e.time, situation:e.situation, direction:e.direction,
+      outcome:e.outcome, bucket:e.bucket, cause:e.cause, note:e.note }))
   };
 }
 function download(name, content, type){
@@ -405,9 +413,9 @@ async function copyText(kind){
 function copyAI(){
   const p = jsonPayload();
   const txt =
-`Below is structured data from an occupational therapy on-road driving assessment, captured live situation-by-situation. Severity per event: "Independent" (performed safely without input), "Prompted" (needed verbal cue/prompt), "Critical" (unsafe; assessor intervention or serious error). Timestamps are real clock time; "elapsed" is time since drive start.
+`Below is structured data from an occupational therapy on-road driving assessment, captured live situation-by-situation. Each event has: "outcome" ("nil" = performed with no issue, "issue" = a problem was observed); for issues a "bucket" naming the skill domain affected (one of Observation, Planning, Positioning, Speed, Physical) and a "cause" ("Habit" = ingrained driving habit, "Medical" = attributable to a medical/functional impairment). "time" is the ISO timestamp of the event.
 
-Please analyse: overall error patterns, which situation types and directions produced most difficulty, severity distribution over the course of the drive (e.g. fatigue effects), and any critical safety concerns. Then draft a concise clinical summary paragraph suitable for an OT driving assessment report.
+Please analyse: which skill domains (buckets) produced most difficulty, how issues break down by situation and direction, the balance of Habit vs Medical causes, and how issues distributed over the course of the drive (e.g. fatigue effects). Then draft a concise clinical summary paragraph, organised around the five skill domains, suitable for an OT driving assessment report.
 
 ${JSON.stringify(p,null,2)}`;
   copyText(txt);
