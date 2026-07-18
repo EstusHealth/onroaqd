@@ -73,11 +73,15 @@
   .chip .icon{font-size:1.5rem; line-height:1;}
   .chip.selected{background:var(--blue); border-color:#79b8ff; color:#fff;}
   .chip:active{transform:scale(.96);}
-  .nil{width:100%; min-height:34vh; border-radius:20px; background:var(--green); color:#fff;
+  .rowLabel{font-size:.85rem; font-weight:700; color:var(--dim); margin:0 0 6px;}
+  .subRow{margin:0 0 14px;}
+  .subRow .chip{min-height:52px; font-size:.95rem; gap:1px;}
+  .subRow .chip .icon{font-size:1.2rem;}
+  .nil{width:100%; min-height:24vh; border-radius:20px; background:var(--green); color:#fff;
     font-size:1.9rem; font-weight:800; border:2px solid #2ea043; margin-bottom:14px;}
   .nil small{display:block; font-size:1rem; font-weight:600; opacity:.85; margin-top:6px;}
   .nil:active{transform:scale(.97); filter:brightness(1.2);}
-  .issue{width:100%; min-height:15vh; border-radius:20px; background:var(--amber); color:#000;
+  .issue{width:100%; min-height:12vh; border-radius:20px; background:var(--amber); color:#000;
     font-size:1.45rem; font-weight:800; border:2px solid #d4a72c;}
   .issue:active{transform:scale(.97); filter:brightness(1.15);}
   .tally{position:absolute; top:5px; right:7px; background:var(--blue); border-radius:999px;
@@ -162,6 +166,15 @@ const SITUATIONS = [
   ['Lane Change / Merge','⇄'],['Manoeuvre','🅿'],['Pedestrian / Hazard','🚶'],
 ];
 const DIRECTIONS = [['Left','⬅'],['Straight','⬆'],['Right','➡']];
+/* optional per-situation detail chips shown on the outcome screen */
+const SUBTYPES = {
+  'Junction': [['T-Junction','⊥'],['Crossroads','✚'],['Give Way','▽'],['Stop Sign','🛑'],['Slip Lane','⤷'],['Uncontrolled','∅']],
+  'Traffic Lights': [['Standard','🚦'],['Turn Arrow','↱'],['Flashing / Out','⚠']],
+  'Roundabout': [['Mini','⊙'],['Single-Lane','◯'],['Multi-Lane','◎']],
+  'Lane Change / Merge': [['Lane Change','⇄'],['Merge','⤳'],['Overtake','⇉'],['Exit / Slip','⤷']],
+  'Manoeuvre': [['Parallel Park','🅿'],['Bay Park','▤'],['Reverse','◀'],['U-Turn','↩'],['3-Point Turn','⟲'],['Hill Start','⛰']],
+  'Pedestrian / Hazard': [['Crossing','🚸'],['Pedestrian','🚶'],['Cyclist','🚲'],['School Zone','🏫'],['Emergency Veh.','🚨'],['Obstacle / Animal','⚠']],
+};
 const BUCKETS = ['Observation','Planning','Positioning','Speed','Physical'];
 const CAUSES = ['Habit','Medical'];
 
@@ -169,7 +182,7 @@ const CAUSES = ['Habit','Medical'];
 const LS_KEY = 'ot_onroad_v2';
 let S = load() || { session:null, events:[] };
 let view = 'capture';
-let draft = null;   // {time, situation, direction, outcome, bucket, cause, note}
+let draft = null;   // {time, situation, subtype, direction, outcome, bucket, cause, note}
 let step = S.session ? 'situation' : 'setup';
 
 function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)); }catch(e){ return null; } }
@@ -232,8 +245,14 @@ function renderCapture(){
       </div>`;
   }
   if(step==='outcome'){
+    const subs = SUBTYPES[draft.situation]||[];
     return `<div class="stepTitle"><span>How did it go?</span>
         <span class="crumb"><b>${esc(draft.situation)}</b> @ ${fmtTime(draft.time)}</span></div>
+      ${subs.length? `<div class="rowLabel">Type (optional)</div>
+      <div class="grid cols3 subRow">
+      ${subs.map(([n,i])=>`<button class="chip ${draft.subtype===n?'selected':''}" onclick="pickSubtype('${esc(n)}')"><span class="icon">${i}</span>${esc(n)}</button>`).join('')}
+      </div>`:''}
+      <div class="rowLabel">Direction (optional)</div>
       <div class="dirRow">
       ${DIRECTIONS.map(([n,i])=>`<button class="chip ${draft.direction===n?'selected':''}" onclick="pickDirection('${esc(n)}')"><span class="icon">${i}</span>${esc(n)}</button>`).join('')}
       </div>
@@ -243,7 +262,7 @@ function renderCapture(){
   }
   /* detail: bucket (single-select) + note + cause-save */
   return `<div class="stepTitle"><span>Which skill? then tap cause to save</span>
-      <span class="crumb"><b>${esc(draft.situation)}</b>${draft.direction?' · '+esc(draft.direction):''} @ ${fmtTime(draft.time)}</span></div>
+      <span class="crumb"><b>${esc(draft.situation)}</b>${draft.subtype?' ('+esc(draft.subtype)+')':''}${draft.direction?' · '+esc(draft.direction):''} @ ${fmtTime(draft.time)}</span></div>
     <div class="grid cols3">
       ${BUCKETS.map(b=>`<button class="big ${draft.bucket===b?'selected':''}" onclick="pickBucket('${esc(b)}')">${esc(b)}</button>`).join('')}
     </div>
@@ -260,7 +279,7 @@ function renderCapture(){
 function lastStrip(){
   const e=S.events[S.events.length-1];
   if(!e) return '';
-  return `<div class="lastStrip"><span style="flex:1">Last: <b>${esc(e.situation)}</b> · ${e.outcome==='issue'? esc(e.bucket) : 'Nil issues'} · ${fmtTime(e.time)}</span><button class="undo" onclick="undoLast()">↺ UNDO</button></div>`;
+  return `<div class="lastStrip"><span style="flex:1">Last: <b>${esc(e.situation)}</b>${e.subtype?' ('+esc(e.subtype)+')':''} · ${e.outcome==='issue'? esc(e.bucket) : 'Nil issues'} · ${fmtTime(e.time)}</span><button class="undo" onclick="undoLast()">↺ UNDO</button></div>`;
 }
 function undoLast(){
   if(!S.events.length) return;
@@ -279,8 +298,13 @@ function renderSetup(){
 
 function pickSituation(n){
   buzz();
-  draft = { time:new Date().toISOString(), situation:n, direction:null, outcome:null, bucket:null, cause:null, note:null };
+  draft = { time:new Date().toISOString(), situation:n, subtype:null, direction:null, outcome:null, bucket:null, cause:null, note:null };
   step='outcome'; render();
+}
+function pickSubtype(n){
+  buzz();
+  draft.subtype = draft.subtype===n ? null : n;   // tap again to deselect
+  render();
 }
 function pickDirection(n){
   buzz();
@@ -338,7 +362,7 @@ function renderLog(){
       const badgeTxt = e.outcome==='issue' ? '!' : '✓';
       return `<div class="logItem">
       <div class="t">${fmtTime(e.time)}<br><span style="font-size:.8rem">+${elapsed(e.time)}</span></div>
-      <div class="d"><b>${esc(e.situation)}</b>${e.direction ? ' · '+esc(e.direction) : ''}
+      <div class="d"><b>${esc(e.situation)}</b>${e.subtype ? ' ('+esc(e.subtype)+')' : ''}${e.direction ? ' · '+esc(e.direction) : ''}
         <small>${detail}</small></div>
       <span class="${badge}">${badgeTxt}</span>
       <button class="del" onclick="delEvent(${i})">✕</button>
@@ -381,15 +405,15 @@ function renderExport(){
 }
 
 function csvString(){
-  const head=['time','situation','direction','outcome','bucket','cause','note'];
-  const rows=S.events.map(e=>[e.time,e.situation,e.direction,e.outcome,e.bucket,e.cause,e.note]);
+  const head=['time','situation','subtype','direction','outcome','bucket','cause','note'];
+  const rows=S.events.map(e=>[e.time,e.situation,e.subtype,e.direction,e.outcome,e.bucket,e.cause,e.note]);
   return [head,...rows].map(r=>r.map(c=>{c=(c==null?'':String(c)); return /[",\n]/.test(c)? '"'+c.replace(/"/g,'""')+'"':c;}).join(',')).join('\n');
 }
 function jsonPayload(){
   return {
     tool:'OT On-Road Assessment Capture', exported:new Date().toISOString(),
     session:S.session, summary:summarise(),
-    events:S.events.map(e=>({ time:e.time, situation:e.situation, direction:e.direction,
+    events:S.events.map(e=>({ time:e.time, situation:e.situation, subtype:e.subtype, direction:e.direction,
       outcome:e.outcome, bucket:e.bucket, cause:e.cause, note:e.note }))
   };
 }
@@ -413,7 +437,7 @@ async function copyText(kind){
 function copyAI(){
   const p = jsonPayload();
   const txt =
-`Below is structured data from an occupational therapy on-road driving assessment, captured live situation-by-situation. Each event has: "outcome" ("nil" = performed with no issue, "issue" = a problem was observed); for issues a "bucket" naming the skill domain affected (one of Observation, Planning, Positioning, Speed, Physical) and a "cause" ("Habit" = ingrained driving habit, "Medical" = attributable to a medical/functional impairment). "time" is the ISO timestamp of the event.
+`Below is structured data from an occupational therapy on-road driving assessment, captured live situation-by-situation. Each event has: "outcome" ("nil" = performed with no issue, "issue" = a problem was observed); an optional "subtype" giving the specific kind of situation (e.g. which manoeuvre or junction type); for issues a "bucket" naming the skill domain affected (one of Observation, Planning, Positioning, Speed, Physical) and a "cause" ("Habit" = ingrained driving habit, "Medical" = attributable to a medical/functional impairment). "time" is the ISO timestamp of the event.
 
 Please analyse: which skill domains (buckets) produced most difficulty, how issues break down by situation and direction, the balance of Habit vs Medical causes, and how issues distributed over the course of the drive (e.g. fatigue effects). Then draft a concise clinical summary paragraph, organised around the five skill domains, suitable for an OT driving assessment report.
 
